@@ -1,0 +1,19 @@
+<resources>
+    <string name="app_name">进程管理器</string>
+    <string name="processes">进程</string>
+    <string name="stats">统计</string>
+    <string name="system">系统</string>
+    <string name="search">搜索进程...</string>
+    <string name="kill">结束</string>
+    <string name="details">详情</string>
+    <string name="system_apps">系统应用</string>
+    <string name="user_apps">用户应用</string>
+    <string name="services">服务</string>
+    <string name="all_processes">全部进程</string>
+    <string name="cpu_usage">CPU使用率</string>
+    <string name="memory_usage">内存使用</string>
+    <string name="total_memory">总内存</string>
+    <string name="available_memory">可用内存</string>
+    <string name="used_memory">已用内存</string>
+    <string name="process_count">进程数量</string>
+</resources>
