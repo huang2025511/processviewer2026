@@ -22,8 +22,11 @@ jobs:
           distribution: 'temurin'
           cache: gradle
 
-      - name: Build with system Gradle
-        run: gradle assembleDebug --no-daemon
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug --no-daemon
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
