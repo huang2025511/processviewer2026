@@ -19,22 +19,52 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
       
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
-        
-      - name: Create local.properties
+      - name: Debug Environment
         run: |
-          mkdir -p local.properties
-          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          echo "=== Java Version ==="
+          java -version
+          echo ""
+          echo "=== JAVA_HOME ==="
+          echo $JAVA_HOME
+          echo ""
+          echo "=== ANDROID_HOME ==="
+          echo $ANDROID_HOME
+          echo ""
+          echo "=== Gradle Wrapper Files ==="
+          ls -la gradle/wrapper/
+          file gradle/wrapper/gradle-wrapper.jar
+          echo ""
+          echo "=== Gradle Wrapper Properties ==="
+          cat gradle/wrapper/gradle-wrapper.properties
       
       - name: Build with Gradle
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
-        env:
-          ANDROID_HOME: /opt/android-sdk
-          ANDROID_SDK_ROOT: /opt/android-sdk
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --info 2>&1 | tee build.log
+        continue-on-error: true
+      
+      - name: Show Build Log
+        if: always()
+        run: |
+          echo "=== Last 100 lines of build log ==="
+          tail -100 build.log || echo "No build log found"
+          echo ""
+          echo "=== Checking for APK ==="
+          find . -name "*.apk" -type f 2>/dev/null
+          echo ""
+          echo "=== Checking build directory ==="
+          ls -la app/build/outputs/ 2>/dev/null || echo "No outputs directory"
       
       - name: Upload build artifacts
+        if: success()
         uses: actions/upload-artifact@v3
         with:
           name: app-debug
           path: app/build/outputs/apk/debug/app-debug.apk
+      
+      - name: Show failure summary
+        if: failure()
+        run: |
+          echo "=== BUILD FAILED ==="
+          echo "Please check the logs above for more details."
+          exit 1
