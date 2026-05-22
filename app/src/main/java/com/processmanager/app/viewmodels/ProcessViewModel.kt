@@ -1,11 +1,16 @@
 package com.processmanager.app.viewmodels
 
 import android.app.ActivityManager
+import android.app.usage.UsageStats
 import android.app.usage.UsageStatsManager
 import android.content.Context
+import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
 import android.os.Debug
+import android.provider.Settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.processmanager.app.models.ProcessCategory
@@ -96,63 +101,118 @@ class ProcessViewModel : ViewModel() {
 
     private fun getRunningProcesses(context: Context): List<ProcessInfo> {
         val packageManager = context.packageManager
-        val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
         val processes = mutableListOf<ProcessInfo>()
+        val processSet = mutableSetOf<String>()
 
-        val runningAppProcesses = activityManager.runningAppProcesses ?: return emptyList()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+            val endTime = System.currentTimeMillis()
+            val beginTime = endTime - 1000 * 60 * 60
 
-        for (processInfo in runningAppProcesses) {
             try {
-                val packageName = processInfo.processName
-                val applicationInfo = try {
-                    packageManager.getApplicationInfo(packageName, 0)
-                } catch (e: PackageManager.NameNotFoundException) {
-                    val packages = packageManager.getPackagesForUid(processInfo.uid)
-                    if (!packages.isNullOrEmpty()) {
-                        packageManager.getApplicationInfo(packages[0], 0)
-                    } else {
-                        null
-                    }
-                }
-
-                val appName = applicationInfo?.let {
-                    packageManager.getApplicationLabel(it).toString()
-                } ?: packageName
-
-                val icon = applicationInfo?.let {
-                    try {
-                        packageManager.getApplicationIcon(it)
-                    } catch (e: Exception) {
-                        null
-                    }
-                }
-
-                val isSystemApp = applicationInfo?.let {
-                    (it.flags and ApplicationInfo.FLAG_SYSTEM) != 0
-                } ?: true
-
-                val memoryInfo = activityManager.getProcessMemoryInfo(intArrayOf(processInfo.pid))
-                val memoryUsage = if (memoryInfo.isNotEmpty()) {
-                    memoryInfo[0].totalPss * 1024L
-                } else {
-                    0L
-                }
-
-                processes.add(
-                    ProcessInfo(
-                        pid = processInfo.pid,
-                        uid = processInfo.uid,
-                        processName = packageName,
-                        appName = appName,
-                        packageName = applicationInfo?.packageName ?: packageName,
-                        icon = icon,
-                        memoryUsage = memoryUsage,
-                        isSystemApp = isSystemApp,
-                        isRunning = true
-                    )
+                val usageStatsList = usageStatsManager.queryUsageStats(
+                    UsageStatsManager.INTERVAL_DAILY,
+                    beginTime,
+                    endTime
                 )
-            } catch (e: Exception) {
+
+                for (usageStats in usageStatsList) {
+                    try {
+                        val packageName = usageStats.packageName
+                        if (processSet.contains(packageName)) continue
+
+                        val applicationInfo = packageManager.getApplicationInfo(packageName, 0)
+                        val appName = packageManager.getApplicationLabel(applicationInfo).toString()
+                        val icon = try {
+                            packageManager.getApplicationIcon(applicationInfo)
+                        } catch (e: Exception) {
+                            null
+                        }
+                        val isSystemApp = (applicationInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+
+                        processes.add(
+                            ProcessInfo(
+                                pid = usageStats.lastTimeUsed.toInt(),
+                                uid = applicationInfo.uid,
+                                processName = packageName,
+                                appName = appName,
+                                packageName = packageName,
+                                icon = icon,
+                                memoryUsage = usageStats.totalTimeInForeground.toLong(),
+                                isSystemApp = isSystemApp,
+                                isRunning = true
+                            )
+                        )
+                        processSet.add(packageName)
+                    } catch (e: PackageManager.NameNotFoundException) {
+                        continue
+                    }
+                }
+            } catch (e: SecurityException) {
                 e.printStackTrace()
+            }
+        }
+
+        val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        val runningAppProcesses = activityManager.runningAppProcesses
+
+        if (runningAppProcesses != null) {
+            for (processInfo in runningAppProcesses) {
+                try {
+                    val packageName = processInfo.processName
+                    if (processSet.contains(packageName)) continue
+
+                    val applicationInfo = try {
+                        packageManager.getApplicationInfo(packageName, 0)
+                    } catch (e: PackageManager.NameNotFoundException) {
+                        val packages = packageManager.getPackagesForUid(processInfo.uid)
+                        if (!packages.isNullOrEmpty()) {
+                            packageManager.getApplicationInfo(packages[0], 0)
+                        } else {
+                            null
+                        }
+                    }
+
+                    val appName = applicationInfo?.let {
+                        packageManager.getApplicationLabel(it).toString()
+                    } ?: packageName
+
+                    val icon = applicationInfo?.let {
+                        try {
+                            packageManager.getApplicationIcon(it)
+                        } catch (e: Exception) {
+                            null
+                        }
+                    }
+
+                    val isSystemApp = applicationInfo?.let {
+                        (it.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+                    } ?: true
+
+                    val memoryInfo = activityManager.getProcessMemoryInfo(intArrayOf(processInfo.pid))
+                    val memoryUsage = if (memoryInfo.isNotEmpty()) {
+                        memoryInfo[0].totalPss * 1024L
+                    } else {
+                        0L
+                    }
+
+                    processes.add(
+                        ProcessInfo(
+                            pid = processInfo.pid,
+                            uid = processInfo.uid,
+                            processName = packageName,
+                            appName = appName,
+                            packageName = applicationInfo?.packageName ?: packageName,
+                            icon = icon,
+                            memoryUsage = memoryUsage,
+                            isSystemApp = isSystemApp,
+                            isRunning = true
+                        )
+                    )
+                    processSet.add(packageName)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
             }
         }
 
@@ -166,5 +226,22 @@ class ProcessViewModel : ViewModel() {
             bytes >= 1024 -> String.format("%.2f KB", bytes / 1024.0)
             else -> "$bytes B"
         }
+    }
+
+    fun hasUsageStatsPermission(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+            val endTime = System.currentTimeMillis()
+            val beginTime = endTime - 1000 * 60 * 60
+            val stats = usageStatsManager.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, beginTime, endTime)
+            return stats.isNotEmpty()
+        }
+        return true
+    }
+
+    fun openUsageStatsSettings(context: Context) {
+        val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(intent)
     }
 }
