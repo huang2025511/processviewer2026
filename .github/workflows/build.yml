@@ -22,14 +22,14 @@ jobs:
           distribution: 'temurin'
           cache: gradle
 
-      - name: Configure Gradle mirror (国内加速)
+      - name: Generate Gradle Wrapper
         run: |
-          mkdir -p ~/.gradle
-          echo "systemProp.https.proxyHost=mirrors.aliyun.com" >> ~/.gradle/gradle.properties
-          echo "systemProp.https.proxyPort=80" >> ~/.gradle/gradle.properties
-
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
+          cat > build.gradle << 'EOF'
+          task wrapper(type: Wrapper) {
+              gradleVersion = '8.2'
+          }
+          EOF
+          gradle wrapper --gradle-version 8.2 --no-daemon
 
       - name: Build Debug APK
         run: ./gradlew assembleDebug --no-daemon
