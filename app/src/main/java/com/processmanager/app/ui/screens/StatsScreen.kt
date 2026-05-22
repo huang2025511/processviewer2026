@@ -4,8 +4,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Memory
-import androidx.compose.material.icons.filled.DeveloperBoard
+import androidx.compose.material.icons.filled.DataUsage
+import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -60,7 +60,7 @@ fun StatsScreen(viewModel: ProcessViewModel) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        Icons.Default.Memory,
+                        Icons.Default.DataUsage,
                         contentDescription = "内存",
                         modifier = Modifier.size(32.dp),
                         tint = MaterialTheme.colorScheme.primary
@@ -137,7 +137,7 @@ fun StatsScreen(viewModel: ProcessViewModel) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        Icons.Default.DeveloperBoard,
+                        Icons.Default.Dashboard,
                         contentDescription = "进程",
                         modifier = Modifier.size(32.dp),
                         tint = MaterialTheme.colorScheme.secondary
