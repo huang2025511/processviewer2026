@@ -15,21 +15,18 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
     
-    - name: Debug info
-      run: |
-        java -version
-        echo "JAVA_HOME=$JAVA_HOME"
-        which java
-        java -Xmx512m -version
-    
     - name: Setup Android SDK
       uses: android-actions/setup-android@v2
     
-    - name: Build
+    - name: Setup Gradle
+      uses: gradle/gradle-build-action@v2
+      with:
+        gradle-version: 8.2
+    
+    - name: Build with Gradle
       run: |
         chmod +x gradlew
-        ./gradlew --version
-        ./gradlew assembleDebug --no-daemon --info 2>&1 | tee build.log || cat build.log
+        ./gradlew assembleDebug --no-daemon --stacktrace
     
     - name: Upload Artifact
       if: success()
@@ -37,9 +34,3 @@ jobs:
       with:
         name: app-debug
         path: app/build/outputs/apk/debug/app-debug.apk
-    
-    - name: Debug build log
-      if: failure()
-      run: |
-        echo "=== Build Log (last 200 lines) ==="
-        tail -200 build.log 2>/dev/null || echo "No build log found"
