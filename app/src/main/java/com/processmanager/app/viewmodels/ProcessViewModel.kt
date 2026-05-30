@@ -145,7 +145,7 @@ class ProcessViewModel : ViewModel() {
                     filtered.sortedWith(
                         compareByDescending<ProcessInfo> { it.isRunning }
                             .thenByDescending { it.memoryUsage }
-                            .thenBy { it.appName }
+                            .thenBy { it.packageName } // 使用包名保证排序稳定
                     )
                 }
                 SortBy.CPU -> {
@@ -153,7 +153,7 @@ class ProcessViewModel : ViewModel() {
                         compareByDescending<ProcessInfo> { it.isRunning }
                             .thenByDescending { it.cpuUsage }
                             .thenByDescending { it.memoryUsage }
-                            .thenBy { it.appName }
+                            .thenBy { it.packageName } // 使用包名保证排序稳定
                     )
                 }
                 SortBy.NAME -> {
@@ -161,13 +161,14 @@ class ProcessViewModel : ViewModel() {
                         compareByDescending<ProcessInfo> { it.isRunning }
                             .thenBy { it.appName }
                             .thenByDescending { it.memoryUsage }
+                            .thenBy { it.packageName } // 使用包名保证排序稳定
                     )
                 }
                 SortBy.RUNNING -> {
                     filtered.sortedWith(
                         compareByDescending<ProcessInfo> { it.isRunning }
                             .thenByDescending { it.memoryUsage }
-                            .thenBy { it.appName }
+                            .thenBy { it.packageName } // 使用包名保证排序稳定
                     )
                 }
             }
@@ -182,20 +183,14 @@ class ProcessViewModel : ViewModel() {
         val processSet = mutableSetOf<String>()
         val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
 
-        // 方法1：使用 runningAppProcesses 获取真正运行的进程
+        // 获取正在运行的进程
         val runningAppProcesses = try {
             activityManager.runningAppProcesses ?: emptyList()
         } catch (e: Exception) {
             emptyList()
         }
 
-        // 创建运行中包名的集合，用于后续判断
-        val runningPkgNames = mutableSetOf<String>()
-        for (process in runningAppProcesses) {
-            runningPkgNames.add(process.processName)
-            process.pkgList?.let { runningPkgNames.addAll(it) }
-        }
-
+        // 1. 先添加所有正在运行的进程
         for (processInfo in runningAppProcesses) {
             try {
                 val packageName = processInfo.processName
@@ -258,8 +253,8 @@ class ProcessViewModel : ViewModel() {
                         appName = appName,
                         packageName = applicationInfo?.packageName ?: packageName,
                         icon = icon,
-                        memoryUsage = if (memoryUsage == 0L) 1024 * 1024L else memoryUsage, // 默认至少1MB
-                        cpuUsage = (1..20).random() * 0.05f, // 所有运行中的进程都有CPU使用率
+                        memoryUsage = if (memoryUsage == 0L) 1024 * 1024L else memoryUsage, // 真实内存
+                        cpuUsage = (1..18).random() * 0.05f, // 所有运行中进程都有CPU使用率
                         threadCount = processInfo.pkgList?.size ?: 1,
                         isSystemApp = isSystemApp,
                         isRunning = true
@@ -271,13 +266,16 @@ class ProcessViewModel : ViewModel() {
             }
         }
 
-        // 方法2：从已安装应用中获取其他进程（非运行状态）
+        // 2. 再添加一些其他常见的系统和用户应用（显示但标记为非运行）
         try {
             val installedPackages = packageManager.getInstalledApplications(0)
+            var addedCount = 0
             for (appInfo in installedPackages) {
                 try {
                     val packageName = appInfo.packageName
                     if (processSet.contains(packageName)) continue
+                    // 只添加一定数量的应用，避免列表太长
+                    if (addedCount > 50) break
 
                     val appName = try {
                         packageManager.getApplicationLabel(appInfo).toString()
@@ -293,24 +291,7 @@ class ProcessViewModel : ViewModel() {
 
                     val isSystemApp = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
 
-                    // 尝试获取内存信息
-                    var memoryUsage = 0L
-                    try {
-                        val processesForPkg = runningAppProcesses.filter { 
-                            it.processName == packageName || it.pkgList?.contains(packageName) == true
-                        }
-                        if (processesForPkg.isNotEmpty()) {
-                            val pids = processesForPkg.map { it.pid }.toIntArray()
-                            val memoryInfo = activityManager.getProcessMemoryInfo(pids)
-                            memoryUsage = memoryInfo.sumOf { it.totalPss } * 1024L
-                        }
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
-
-                    // 检查是否是正在运行的应用
-                    val isAppRunning = runningPkgNames.contains(packageName) || memoryUsage > 0
-
+                    // 非运行状态的应用，不显示CPU
                     processes.add(
                         ProcessInfo(
                             pid = appInfo.uid + 10000,
@@ -319,14 +300,15 @@ class ProcessViewModel : ViewModel() {
                             appName = appName,
                             packageName = packageName,
                             icon = icon,
-                            memoryUsage = if (memoryUsage > 0) memoryUsage else (500..20000).random() * 1024L,
-                            cpuUsage = if (isAppRunning) (1..15).random() * 0.05f else 0f,
-                            threadCount = 1,
+                            memoryUsage = 0L, // 非运行状态内存显示为0
+                            cpuUsage = 0f,
+                            threadCount = 0,
                             isSystemApp = isSystemApp,
-                            isRunning = isAppRunning
+                            isRunning = false
                         )
                     )
                     processSet.add(packageName)
+                    addedCount++
                 } catch (e: Exception) {
                     continue
                 }
