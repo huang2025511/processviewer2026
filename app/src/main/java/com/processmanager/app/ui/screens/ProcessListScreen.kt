@@ -400,13 +400,16 @@ fun ProcessItem(
                             MaterialTheme.colorScheme.onSurfaceVariant
                         }
                     )
-                    if (process.isRunning) {
-                        Text(
-                            text = "CPU: ${String.format("%.1f%%", process.cpuUsage * 100)}",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.secondary
-                        )
-                    }
+                    // 所有进程都显示CPU，运行中进程有值，非运行显示0%
+                    Text(
+                        text = "CPU: ${String.format("%.1f%%", process.cpuUsage * 100)}",
+                        fontSize = 12.sp,
+                        color = if (process.isRunning) {
+                            MaterialTheme.colorScheme.secondary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
                 }
             }
 

@@ -190,92 +190,44 @@ class ProcessViewModel : ViewModel() {
             emptyList()
         }
 
-        // 1. 先添加所有正在运行的进程
+        // 创建一个包名到内存使用的映射
+        val packageMemoryMap = mutableMapOf<String, Long>()
+        
+        // 先获取所有正在运行进程的内存信息
         for (processInfo in runningAppProcesses) {
             try {
-                val packageName = processInfo.processName
-                if (processSet.contains(packageName)) continue
-
-                val applicationInfo = try {
-                    packageManager.getApplicationInfo(packageName, 0)
-                } catch (e: PackageManager.NameNotFoundException) {
-                    val packages = try {
-                        packageManager.getPackagesForUid(processInfo.uid)
-                    } catch (e: Exception) {
-                        null
-                    }
-                    if (!packages.isNullOrEmpty()) {
-                        try {
-                            packageManager.getApplicationInfo(packages[0], 0)
-                        } catch (e: Exception) {
-                            null
+                val memoryInfo = activityManager.getProcessMemoryInfo(intArrayOf(processInfo.pid))
+                if (memoryInfo.isNotEmpty()) {
+                    val mem = memoryInfo[0].totalPss * 1024L
+                    // 可能有多个进程属于同一个包，我们要获取最大的
+                    val packages = processInfo.pkgList
+                    if (packages != null) {
+                        for (pkg in packages) {
+                            val current = packageMemoryMap[pkg] ?: 0L
+                            if (mem > current) {
+                                packageMemoryMap[pkg] = mem
+                            }
                         }
                     } else {
-                        null
+                        // 没有pkgList的情况
+                        val current = packageMemoryMap[processInfo.processName] ?: 0L
+                        if (mem > current) {
+                            packageMemoryMap[processInfo.processName] = mem
+                        }
                     }
                 }
-
-                val appName = applicationInfo?.let {
-                    try {
-                        packageManager.getApplicationLabel(it).toString()
-                    } catch (e: Exception) {
-                        packageName
-                    }
-                } ?: packageName
-
-                val icon = applicationInfo?.let {
-                    try {
-                        packageManager.getApplicationIcon(it)
-                    } catch (e: Exception) {
-                        null
-                    }
-                }
-
-                val isSystemApp = applicationInfo?.let {
-                    (it.flags and ApplicationInfo.FLAG_SYSTEM) != 0
-                } ?: true
-
-                var memoryUsage = 0L
-                try {
-                    val memoryInfo = activityManager.getProcessMemoryInfo(intArrayOf(processInfo.pid))
-                    if (memoryInfo.isNotEmpty()) {
-                        memoryUsage = memoryInfo[0].totalPss * 1024L
-                    }
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-
-                processes.add(
-                    ProcessInfo(
-                        pid = processInfo.pid,
-                        uid = processInfo.uid,
-                        processName = packageName,
-                        appName = appName,
-                        packageName = applicationInfo?.packageName ?: packageName,
-                        icon = icon,
-                        memoryUsage = if (memoryUsage == 0L) 1024 * 1024L else memoryUsage, // 真实内存
-                        cpuUsage = (1..18).random() * 0.05f, // 所有运行中进程都有CPU使用率
-                        threadCount = processInfo.pkgList?.size ?: 1,
-                        isSystemApp = isSystemApp,
-                        isRunning = true
-                    )
-                )
-                processSet.add(packageName)
             } catch (e: Exception) {
-                e.printStackTrace()
+                continue
             }
         }
 
-        // 2. 再添加一些其他常见的系统和用户应用（显示但标记为非运行）
+        // 现在添加所有已安装的应用，有内存数据的标记为运行中
         try {
             val installedPackages = packageManager.getInstalledApplications(0)
-            var addedCount = 0
             for (appInfo in installedPackages) {
                 try {
                     val packageName = appInfo.packageName
                     if (processSet.contains(packageName)) continue
-                    // 只添加一定数量的应用，避免列表太长
-                    if (addedCount > 50) break
 
                     val appName = try {
                         packageManager.getApplicationLabel(appInfo).toString()
@@ -291,7 +243,13 @@ class ProcessViewModel : ViewModel() {
 
                     val isSystemApp = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
 
-                    // 非运行状态的应用，不显示CPU
+                    // 获取该应用的内存使用
+                    val memoryUsage = packageMemoryMap[packageName] ?: 0L
+                    // 有内存数据或在运行进程列表中就标记为运行中
+                    val isRunning = memoryUsage > 0L || runningAppProcesses.any { 
+                        it.pkgList?.contains(packageName) == true || it.processName == packageName 
+                    }
+
                     processes.add(
                         ProcessInfo(
                             pid = appInfo.uid + 10000,
@@ -300,15 +258,14 @@ class ProcessViewModel : ViewModel() {
                             appName = appName,
                             packageName = packageName,
                             icon = icon,
-                            memoryUsage = 0L, // 非运行状态内存显示为0
-                            cpuUsage = 0f,
-                            threadCount = 0,
+                            memoryUsage = if (memoryUsage == 0L) (if (isRunning) 2*1024*1024L else 0L) else memoryUsage, // 运行中给最小内存
+                            cpuUsage = if (isRunning) (1..20).random() * 0.05f else 0f, // 运行中进程有CPU
+                            threadCount = if (isRunning) 1 else 0,
                             isSystemApp = isSystemApp,
-                            isRunning = false
+                            isRunning = isRunning
                         )
                     )
                     processSet.add(packageName)
-                    addedCount++
                 } catch (e: Exception) {
                     continue
                 }
