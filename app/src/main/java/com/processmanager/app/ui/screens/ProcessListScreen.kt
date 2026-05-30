@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.processmanager.app.models.ProcessCategory
 import com.processmanager.app.models.ProcessInfo
+import com.processmanager.app.models.SortBy
 import com.processmanager.app.viewmodels.ProcessViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -39,18 +40,45 @@ fun ProcessListScreen(
     val processes by viewModel.processes.collectAsState()
     val selectedCategory by viewModel.selectedCategory.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
+    val sortBy by viewModel.sortBy.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val hasPermission = remember { mutableStateOf(viewModel.hasUsageStatsPermission(context)) }
+    var showSortMenu by remember { mutableStateOf(false) }
     
-    // 先获取所有过滤后的进程，然后按运行状态和内存占用排序
-    val filteredProcesses = remember(processes, selectedCategory, searchQuery) {
+    // 先获取所有过滤后的进程，然后按排序方式排序
+    val filteredProcesses = remember(processes, selectedCategory, searchQuery, sortBy) {
         val allFiltered = viewModel.getFilteredProcesses()
-        // 先显示正在运行的进程，再按内存占用排序
-        allFiltered.sortedWith(
-            compareByDescending<ProcessInfo> { it.isRunning }
-                .thenByDescending { it.memoryUsage }
-                .thenBy { it.appName }
-        )
+        when (sortBy) {
+            SortBy.MEMORY -> {
+                allFiltered.sortedWith(
+                    compareByDescending<ProcessInfo> { it.isRunning }
+                        .thenByDescending { it.memoryUsage }
+                        .thenBy { it.appName }
+                )
+            }
+            SortBy.CPU -> {
+                allFiltered.sortedWith(
+                    compareByDescending<ProcessInfo> { it.isRunning }
+                        .thenByDescending { it.cpuUsage }
+                        .thenByDescending { it.memoryUsage }
+                        .thenBy { it.appName }
+                )
+            }
+            SortBy.NAME -> {
+                allFiltered.sortedWith(
+                    compareByDescending<ProcessInfo> { it.isRunning }
+                        .thenBy { it.appName }
+                        .thenByDescending { it.memoryUsage }
+                )
+            }
+            SortBy.RUNNING -> {
+                allFiltered.sortedWith(
+                    compareByDescending<ProcessInfo> { it.isRunning }
+                        .thenByDescending { it.memoryUsage }
+                        .thenBy { it.appName }
+                )
+            }
+        }
     }
 
     // 确保权限变化时更新
@@ -69,6 +97,66 @@ fun ProcessListScreen(
             TopAppBar(
                 title = { Text("进程管理器") },
                 actions = {
+                    // 排序按钮
+                    Box {
+                        IconButton(onClick = { showSortMenu = true }) {
+                            Icon(Icons.Default.Sort, contentDescription = "排序")
+                        }
+                        DropdownMenu(
+                            expanded = showSortMenu,
+                            onDismissRequest = { showSortMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("按内存排序", fontWeight = if (sortBy == SortBy.MEMORY) FontWeight.Bold else FontWeight.Normal) },
+                                onClick = {
+                                    viewModel.setSortBy(SortBy.MEMORY)
+                                    showSortMenu = false
+                                },
+                                leadingIcon = {
+                                    if (sortBy == SortBy.MEMORY) {
+                                        Icon(Icons.Default.Check, contentDescription = null)
+                                    }
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("按CPU排序", fontWeight = if (sortBy == SortBy.CPU) FontWeight.Bold else FontWeight.Normal) },
+                                onClick = {
+                                    viewModel.setSortBy(SortBy.CPU)
+                                    showSortMenu = false
+                                },
+                                leadingIcon = {
+                                    if (sortBy == SortBy.CPU) {
+                                        Icon(Icons.Default.Check, contentDescription = null)
+                                    }
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("按名称排序", fontWeight = if (sortBy == SortBy.NAME) FontWeight.Bold else FontWeight.Normal) },
+                                onClick = {
+                                    viewModel.setSortBy(SortBy.NAME)
+                                    showSortMenu = false
+                                },
+                                leadingIcon = {
+                                    if (sortBy == SortBy.NAME) {
+                                        Icon(Icons.Default.Check, contentDescription = null)
+                                    }
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("按运行状态排序", fontWeight = if (sortBy == SortBy.RUNNING) FontWeight.Bold else FontWeight.Normal) },
+                                onClick = {
+                                    viewModel.setSortBy(SortBy.RUNNING)
+                                    showSortMenu = false
+                                },
+                                leadingIcon = {
+                                    if (sortBy == SortBy.RUNNING) {
+                                        Icon(Icons.Default.Check, contentDescription = null)
+                                    }
+                                }
+                            )
+                        }
+                    }
+                    
                     IconButton(onClick = {
                         hasPermission.value = viewModel.hasUsageStatsPermission(context)
                         if (hasPermission.value) {
@@ -300,12 +388,17 @@ fun ProcessItem(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = process.appName,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    text = process.appName,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = if (process.isRunning) {
+                        MaterialTheme.colorScheme.onSurface
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                )
                     if (process.isRunning) {
                         Spacer(modifier = Modifier.width(4.dp))
                         Box(
@@ -334,14 +427,19 @@ fun ProcessItem(
                 )
             }
 
-            if (process.isRunning) {
-                IconButton(onClick = { viewModel.killProcess(context, process) }) {
-                    Icon(
-                        Icons.Default.Close,
-                        contentDescription = "结束进程",
-                        tint = MaterialTheme.colorScheme.error
-                    )
-                }
+            // 所有进程都显示结束按钮，运行中彩色，非运行灰色
+            IconButton(
+                onClick = { viewModel.killProcess(context, process) }
+            ) {
+                Icon(
+                    Icons.Default.Close,
+                    contentDescription = "结束进程",
+                    tint = if (process.isRunning) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.outline
+                    }
+                )
             }
         }
     }

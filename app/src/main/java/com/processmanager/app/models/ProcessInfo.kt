@@ -34,3 +34,10 @@ enum class ProcessCategory {
     SYSTEM,
     SERVICE
 }
+
+enum class SortBy {
+    MEMORY,
+    CPU,
+    NAME,
+    RUNNING
+}

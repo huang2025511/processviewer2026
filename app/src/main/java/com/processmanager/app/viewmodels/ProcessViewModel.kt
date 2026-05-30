@@ -41,6 +41,9 @@ class ProcessViewModel : ViewModel() {
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
+    private val _sortBy = MutableStateFlow(SortBy.MEMORY)
+    val sortBy: StateFlow<SortBy> = _sortBy.asStateFlow()
+
     fun loadProcesses(context: Context) {
         viewModelScope.launch {
             _isLoading.value = true
@@ -74,38 +77,30 @@ class ProcessViewModel : ViewModel() {
         _searchQuery.value = query
     }
 
+    fun setSortBy(sortBy: SortBy) {
+        _sortBy.value = sortBy
+    }
+
     fun killProcess(context: Context, processInfo: ProcessInfo) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
                 
-                // 方法1：尝试杀死后台进程
+                // 尝试杀死后台进程
                 try {
                     activityManager.killBackgroundProcesses(processInfo.packageName)
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
                 
-                // 方法2：尝试强制停止应用（需要系统权限，但我们尝试）
+                // 尝试强制停止应用
                 try {
                     val forceStopMethod = activityManager.javaClass.getMethod(
                         "forceStopPackage", String::class.java
                     )
                     forceStopMethod.invoke(activityManager, processInfo.packageName)
                 } catch (e: Exception) {
-                    // 没有系统权限也没关系，继续其他方法
-                }
-                
-                // 方法3：打开应用详情页面让用户手动关闭
-                withContext(Dispatchers.Main) {
-                    try {
-                        val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
-                        intent.data = Uri.parse("package:${processInfo.packageName}")
-                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        context.startActivity(intent)
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
+                    // 没有系统权限也没关系
                 }
                 
                 // 延迟刷新，给系统一些时间
