@@ -39,12 +39,22 @@ fun ProcessListScreen(
     val selectedCategory by viewModel.selectedCategory.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
-    val filteredProcesses = viewModel.getFilteredProcesses()
     val hasPermission = remember { mutableStateOf(viewModel.hasUsageStatsPermission(context)) }
+    
+    // 直接计算过滤后的进程列表，确保每次状态变化都能正确更新
+    val filteredProcesses = remember(processes, selectedCategory, searchQuery) {
+        viewModel.getFilteredProcesses()
+    }
 
+    // 确保权限变化时更新
     LaunchedEffect(Unit) {
-        viewModel.loadProcesses(context)
-        viewModel.loadMemoryInfo(context)
+        hasPermission.value = viewModel.hasUsageStatsPermission(context)
+    }
+    
+    LaunchedEffect(Unit) {
+        if (!hasPermission.value) {
+            viewModel.openUsageStatsSettings(context)
+        }
     }
 
     Scaffold(
@@ -151,7 +161,10 @@ fun ProcessListScreen(
                         contentPadding = PaddingValues(16.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        items(filteredProcesses, key = { it.pid }) { process ->
+                        items(
+                            items = filteredProcesses,
+                            key = { process -> "${process.pid}-${process.packageName}" }
+                        ) { process ->
                             ProcessItem(
                                 process = process,
                                 viewModel = viewModel,
@@ -233,38 +246,36 @@ fun ProcessItem(
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            process.icon?.let { icon ->
-                when (icon) {
-                    is BitmapDrawable -> {
-                        Image(
-                            bitmap = icon.bitmap.asImageBitmap(),
-                            contentDescription = process.appName,
-                            modifier = Modifier
-                                .size(48.dp)
-                                .clip(CircleShape),
-                            contentScale = ContentScale.Crop
-                        )
+            // 使用更安全的图标显示方式
+            val iconBitmap = remember(process.packageName) {
+                try {
+                    process.icon?.let {
+                        when (it) {
+                            is BitmapDrawable -> it.bitmap.asImageBitmap()
+                            else -> null
+                        }
                     }
-                    is VectorDrawable -> {
-                        Icon(
-                            imageVector = Icons.Default.Home,
-                            contentDescription = process.appName,
-                            modifier = Modifier.size(48.dp)
-                        )
-                    }
-                    else -> {
-                        Icon(
-                            imageVector = Icons.Default.Home,
-                            contentDescription = process.appName,
-                            modifier = Modifier.size(48.dp)
-                        )
-                    }
+                } catch (e: Exception) {
+                    null
                 }
-            } ?: Icon(
-                imageVector = Icons.Default.Home,
-                contentDescription = process.appName,
-                modifier = Modifier.size(48.dp)
-            )
+            }
+            
+            if (iconBitmap != null) {
+                Image(
+                    bitmap = iconBitmap,
+                    contentDescription = process.appName,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape),
+                    contentScale = ContentScale.Crop
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Default.Home,
+                    contentDescription = process.appName,
+                    modifier = Modifier.size(48.dp)
+                )
+            }
 
             Spacer(modifier = Modifier.width(12.dp))
 

@@ -37,8 +37,23 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun ProcessManagerApp() {
     val viewModel: ProcessViewModel = viewModel()
+    val context = androidx.compose.ui.platform.LocalContext.current
     var currentScreen by remember { mutableStateOf<Screen>(Screen.ProcessList) }
     var selectedProcess by remember { mutableStateOf<ProcessInfo?>(null) }
+
+    // 应用启动时立即加载数据
+    LaunchedEffect(Unit) {
+        viewModel.loadProcesses(context)
+        viewModel.loadMemoryInfo(context)
+    }
+
+    // 当切换到进程列表时重新加载数据
+    LaunchedEffect(currentScreen) {
+        if (currentScreen is Screen.ProcessList) {
+            viewModel.loadProcesses(context)
+            viewModel.loadMemoryInfo(context)
+        }
+    }
 
     MaterialTheme {
         Scaffold(

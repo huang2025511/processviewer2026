@@ -16,10 +16,14 @@ data class ProcessInfo(
     val threadCount: Int = 0
 ) {
     fun getCategory(): ProcessCategory {
-        return when {
-            isSystemApp -> ProcessCategory.SYSTEM
-            processName.contains(":") || processName.lowercase().contains("service") -> ProcessCategory.SERVICE
-            else -> ProcessCategory.USER
+        return try {
+            when {
+                isSystemApp -> ProcessCategory.SYSTEM
+                processName.contains(":") || processName.lowercase().contains("service") -> ProcessCategory.SERVICE
+                else -> ProcessCategory.USER
+            }
+        } catch (e: Exception) {
+            ProcessCategory.USER
         }
     }
 }
