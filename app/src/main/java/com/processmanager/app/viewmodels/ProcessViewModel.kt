@@ -15,6 +15,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.processmanager.app.models.ProcessCategory
 import com.processmanager.app.models.ProcessInfo
+import com.processmanager.app.models.SortBy
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
