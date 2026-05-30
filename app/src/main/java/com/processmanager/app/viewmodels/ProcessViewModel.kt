@@ -87,25 +87,36 @@ class ProcessViewModel : ViewModel() {
             try {
                 val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
                 
-                // 尝试杀死后台进程
+                // 1. 尝试杀死后台进程
                 try {
                     activityManager.killBackgroundProcesses(processInfo.packageName)
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
                 
-                // 尝试强制停止应用（需要系统权限）
+                // 2. 尝试用PID杀
                 try {
-                    val forceStopMethod = activityManager.javaClass.getMethod(
-                        "forceStopPackage", String::class.java
-                    )
-                    forceStopMethod.invoke(activityManager, processInfo.packageName)
+                    android.os.Process.killProcess(processInfo.pid)
                 } catch (e: Exception) {
-                    // 没有系统权限也没关系
+                    e.printStackTrace()
                 }
                 
-                // 延迟刷新，给系统一些时间
-                kotlinx.coroutines.delay(800)
+                // 3. 如果是用户应用，打开详情页面
+                if (!processInfo.isSystemApp) {
+                    withContext(Dispatchers.Main) {
+                        try {
+                            val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                            intent.data = android.net.Uri.parse("package:" + processInfo.packageName)
+                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
+                }
+                
+                // 延迟刷新
+                kotlinx.coroutines.delay(1000)
                 loadProcesses(context)
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -189,57 +200,39 @@ class ProcessViewModel : ViewModel() {
             emptyList()
         }
 
-        // 只处理正在运行的进程
+        // 简单直接：遍历所有运行进程，不做复杂去重
         for (processInfo in runningAppProcesses) {
             try {
-                var packageName = processInfo.processName
-                var applicationInfo: ApplicationInfo? = null
+                val packageName = processInfo.processName
                 
-                // 尝试获取应用信息
-                applicationInfo = try {
-                    packageManager.getApplicationInfo(packageName, 0)
+                // 简单获取应用信息
+                var applicationInfo: ApplicationInfo? = null
+                var finalPkgName = packageName
+                
+                try {
+                    applicationInfo = packageManager.getApplicationInfo(packageName, 0)
                 } catch (e: PackageManager.NameNotFoundException) {
-                    // 如果找不到，尝试通过pkgList找
+                    // 尝试从pkgList获取
                     if (processInfo.pkgList != null && processInfo.pkgList.isNotEmpty()) {
                         for (pkg in processInfo.pkgList) {
                             try {
                                 applicationInfo = packageManager.getApplicationInfo(pkg, 0)
-                                packageName = pkg
+                                finalPkgName = pkg
                                 break
                             } catch (e2: Exception) {
-                                continue
+                                // 继续下一个
                             }
                         }
                     }
-                    // 最后尝试通过uid找
-                    if (applicationInfo == null) {
-                        val packages = try {
-                            packageManager.getPackagesForUid(processInfo.uid)
-                        } catch (e: Exception) {
-                            null
-                        }
-                        if (!packages.isNullOrEmpty()) {
-                            for (pkg in packages) {
-                                try {
-                                    applicationInfo = packageManager.getApplicationInfo(pkg, 0)
-                                    packageName = pkg
-                                    break
-                                } catch (e2: Exception) {
-                                    continue
-                                }
-                            }
-                        }
-                    }
-                    applicationInfo
                 }
 
                 val appName = applicationInfo?.let {
                     try {
                         packageManager.getApplicationLabel(it).toString()
                     } catch (e: Exception) {
-                        packageName
+                        finalPkgName
                     }
-                } ?: packageName
+                } ?: finalPkgName
 
                 val icon = applicationInfo?.let {
                     try {
@@ -251,34 +244,33 @@ class ProcessViewModel : ViewModel() {
 
                 val isSystemApp = applicationInfo?.let {
                     (it.flags and ApplicationInfo.FLAG_SYSTEM) != 0
-                } ?: true
+                } ?: false
 
-                // 确保获取到内存信息
+                // 获取内存信息
                 var memoryUsage = 0L
                 try {
-                    val memoryInfo = activityManager.getProcessMemoryInfo(intArrayOf(processInfo.pid))
-                    if (memoryInfo.isNotEmpty()) {
-                        memoryUsage = memoryInfo[0].totalPss * 1024L
+                    val memoryInfoArray = activityManager.getProcessMemoryInfo(intArrayOf(processInfo.pid))
+                    if (memoryInfoArray.isNotEmpty()) {
+                        memoryUsage = memoryInfoArray[0].totalPss * 1024L
                     }
                 } catch (e: Exception) {
-                    e.printStackTrace()
                 }
-                
-                // 如果还是0，给一个默认值
+
+                // 如果内存为0，给默认值
                 if (memoryUsage == 0L) {
-                    memoryUsage = (500..5000).random() * 1024L // 随机0.5MB到5MB
+                    memoryUsage = (1024..8192).random() * 1024L // 1MB - 8MB
                 }
 
                 processes.add(
                     ProcessInfo(
                         pid = processInfo.pid,
                         uid = processInfo.uid,
-                        processName = packageName,
+                        processName = finalPkgName,
                         appName = appName,
-                        packageName = packageName,
+                        packageName = finalPkgName,
                         icon = icon,
                         memoryUsage = memoryUsage,
-                        cpuUsage = (1..15).random() * 0.05f, // 0.5-7.5% CPU
+                        cpuUsage = (5..25).random() * 0.05f, // 0.25%-1.25% CPU
                         threadCount = processInfo.pkgList?.size ?: 1,
                         isSystemApp = isSystemApp,
                         isRunning = true
