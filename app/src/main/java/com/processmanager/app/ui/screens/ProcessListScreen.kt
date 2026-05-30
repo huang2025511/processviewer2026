@@ -49,6 +49,22 @@ fun ProcessListScreen(
     val filteredProcesses = remember(processes, selectedCategory, searchQuery, sortBy) {
         viewModel.getFilteredProcesses()
     }
+    
+    // 添加自动刷新功能
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val job = kotlinx.coroutines.GlobalScope.launch {
+            while (true) {
+                kotlinx.coroutines.delay(3000) // 每3秒刷新一次
+                if (hasPermission.value) {
+                    viewModel.loadProcesses(context)
+                }
+            }
+        }
+        onDispose {
+            job.cancel()
+        }
+    }
 
     // 确保权限变化时更新
     LaunchedEffect(Unit) {

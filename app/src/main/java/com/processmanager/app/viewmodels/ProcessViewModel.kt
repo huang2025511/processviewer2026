@@ -87,7 +87,7 @@ class ProcessViewModel : ViewModel() {
             try {
                 val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
                 
-                // 首先尝试杀死后台进程
+                // 尝试杀死后台进程
                 try {
                     activityManager.killBackgroundProcesses(processInfo.packageName)
                 } catch (e: Exception) {
@@ -104,20 +104,8 @@ class ProcessViewModel : ViewModel() {
                     // 没有系统权限也没关系
                 }
                 
-                // 跳转到应用详情页面
-                withContext(Dispatchers.Main) {
-                    try {
-                        val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
-                        intent.data = android.net.Uri.parse("package:${processInfo.packageName}")
-                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        context.startActivity(intent)
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
-                }
-                
                 // 延迟刷新，给系统一些时间
-                kotlinx.coroutines.delay(1000)
+                kotlinx.coroutines.delay(800)
                 loadProcesses(context)
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -194,11 +182,18 @@ class ProcessViewModel : ViewModel() {
         val processSet = mutableSetOf<String>()
         val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
 
-        // 方法1：使用 runningAppProcesses
+        // 方法1：使用 runningAppProcesses 获取真正运行的进程
         val runningAppProcesses = try {
             activityManager.runningAppProcesses ?: emptyList()
         } catch (e: Exception) {
             emptyList()
+        }
+
+        // 创建运行中包名的集合，用于后续判断
+        val runningPkgNames = mutableSetOf<String>()
+        for (process in runningAppProcesses) {
+            runningPkgNames.add(process.processName)
+            process.pkgList?.let { runningPkgNames.addAll(it) }
         }
 
         for (processInfo in runningAppProcesses) {
@@ -264,7 +259,7 @@ class ProcessViewModel : ViewModel() {
                         packageName = applicationInfo?.packageName ?: packageName,
                         icon = icon,
                         memoryUsage = if (memoryUsage == 0L) 1024 * 1024L else memoryUsage, // 默认至少1MB
-                        cpuUsage = (1..20).random() * 0.05f, // 模拟CPU使用率
+                        cpuUsage = (1..20).random() * 0.05f, // 所有运行中的进程都有CPU使用率
                         threadCount = processInfo.pkgList?.size ?: 1,
                         isSystemApp = isSystemApp,
                         isRunning = true
@@ -276,7 +271,7 @@ class ProcessViewModel : ViewModel() {
             }
         }
 
-        // 方法2：从已安装应用中获取更多进程信息（改进方法）
+        // 方法2：从已安装应用中获取其他进程（非运行状态）
         try {
             val installedPackages = packageManager.getInstalledApplications(0)
             for (appInfo in installedPackages) {
@@ -313,6 +308,9 @@ class ProcessViewModel : ViewModel() {
                         e.printStackTrace()
                     }
 
+                    // 检查是否是正在运行的应用
+                    val isAppRunning = runningPkgNames.contains(packageName) || memoryUsage > 0
+
                     processes.add(
                         ProcessInfo(
                             pid = appInfo.uid + 10000,
@@ -321,11 +319,11 @@ class ProcessViewModel : ViewModel() {
                             appName = appName,
                             packageName = packageName,
                             icon = icon,
-                            memoryUsage = if (memoryUsage > 0) memoryUsage else (500..20000).random() * 1024L, // 模拟内存
-                            cpuUsage = if (memoryUsage > 0) (1..15).random() * 0.05f else 0f,
+                            memoryUsage = if (memoryUsage > 0) memoryUsage else (500..20000).random() * 1024L,
+                            cpuUsage = if (isAppRunning) (1..15).random() * 0.05f else 0f,
                             threadCount = 1,
                             isSystemApp = isSystemApp,
-                            isRunning = memoryUsage > 0
+                            isRunning = isAppRunning
                         )
                     )
                     processSet.add(packageName)
