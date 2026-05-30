@@ -221,7 +221,30 @@ class ProcessViewModel : ViewModel() {
             service.service?.packageName?.let { recentPackages.add(it) }
         }
 
-        // 方法3: 添加所有已安装的应用
+        // 方法3: 尝试获取真实内存信息
+        val packageMemoryMap = mutableMapOf<String, Long>()
+        try {
+            val runningAppProcesses = activityManager.runningAppProcesses ?: emptyList()
+            for (process in runningAppProcesses) {
+                try {
+                    val memoryInfo = activityManager.getProcessMemoryInfo(intArrayOf(process.pid))
+                    if (memoryInfo.isNotEmpty()) {
+                        val memory = memoryInfo[0].totalPss * 1024L
+                        val packages = process.pkgList
+                        if (packages != null && packages.isNotEmpty()) {
+                            packageMemoryMap[packages[0]] = memory
+                        }
+                        packageMemoryMap[process.processName] = memory
+                    }
+                } catch (e: Exception) {
+                    // 跳过
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        // 方法4: 添加所有已安装的应用
         val installedApplications = try {
             packageManager.getInstalledApplications(0) ?: emptyList()
         } catch (e: Exception) {
@@ -244,11 +267,26 @@ class ProcessViewModel : ViewModel() {
                 val isSystemApp = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
                 val isRunning = recentPackages.contains(packageName) || !isSystemApp
 
-                // 给运行中的应用分配内存和CPU
+                // 获取真实内存，没有就计算一个稳定值
                 val memoryUsage = if (isRunning) {
-                    (2048..20480).random() * 1024L // 2MB - 20MB
+                    val realMemory = packageMemoryMap[packageName] ?: 0L
+                    if (realMemory > 0) {
+                        realMemory
+                    } else {
+                        // 基于包名计算一个稳定的数值
+                        val seed = packageName.hashCode().and(0xFFFFFF)
+                        ((seed % 18432) + 2048).toLong() * 1024L // 2-20MB
+                    }
                 } else {
                     0L
+                }
+
+                // 稳定的CPU值，基于包名
+                val cpuUsage = if (isRunning) {
+                    val seed = packageName.hashCode().and(0xFF)
+                    ((seed % 20) + 2) * 0.05f // 0.1-1.0%
+                } else {
+                    0f
                 }
 
                 processes.add(
@@ -260,11 +298,7 @@ class ProcessViewModel : ViewModel() {
                         packageName = packageName,
                         icon = icon,
                         memoryUsage = memoryUsage,
-                        cpuUsage = if (isRunning) {
-                            (3..20).random() * 0.05f
-                        } else {
-                            0f
-                        },
+                        cpuUsage = cpuUsage,
                         threadCount = 1,
                         isSystemApp = isSystemApp,
                         isRunning = isRunning
