@@ -45,40 +45,9 @@ fun ProcessListScreen(
     val hasPermission = remember { mutableStateOf(viewModel.hasUsageStatsPermission(context)) }
     var showSortMenu by remember { mutableStateOf(false) }
     
-    // 先获取所有过滤后的进程，然后按排序方式排序
+    // 先获取所有过滤后的进程（排序已在ViewModel中处理）
     val filteredProcesses = remember(processes, selectedCategory, searchQuery, sortBy) {
-        val allFiltered = viewModel.getFilteredProcesses()
-        when (sortBy) {
-            SortBy.MEMORY -> {
-                allFiltered.sortedWith(
-                    compareByDescending<ProcessInfo> { it.isRunning }
-                        .thenByDescending { it.memoryUsage }
-                        .thenBy { it.appName }
-                )
-            }
-            SortBy.CPU -> {
-                allFiltered.sortedWith(
-                    compareByDescending<ProcessInfo> { it.isRunning }
-                        .thenByDescending { it.cpuUsage }
-                        .thenByDescending { it.memoryUsage }
-                        .thenBy { it.appName }
-                )
-            }
-            SortBy.NAME -> {
-                allFiltered.sortedWith(
-                    compareByDescending<ProcessInfo> { it.isRunning }
-                        .thenBy { it.appName }
-                        .thenByDescending { it.memoryUsage }
-                )
-            }
-            SortBy.RUNNING -> {
-                allFiltered.sortedWith(
-                    compareByDescending<ProcessInfo> { it.isRunning }
-                        .thenByDescending { it.memoryUsage }
-                        .thenBy { it.appName }
-                )
-            }
-        }
+        viewModel.getFilteredProcesses()
     }
 
     // 确保权限变化时更新
@@ -388,17 +357,17 @@ fun ProcessItem(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                    text = process.appName,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    color = if (process.isRunning) {
-                        MaterialTheme.colorScheme.onSurface
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    }
-                )
+                        text = process.appName,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = if (process.isRunning) {
+                            MaterialTheme.colorScheme.onSurface
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
                     if (process.isRunning) {
                         Spacer(modifier = Modifier.width(4.dp))
                         Box(
@@ -416,15 +385,27 @@ fun ProcessItem(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Text(
-                    text = "内存: ${viewModel.formatMemory(process.memoryUsage)}",
-                    fontSize = 12.sp,
-                    color = if (process.memoryUsage > 0) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "内存: ${viewModel.formatMemory(process.memoryUsage)}",
+                        fontSize = 12.sp,
+                        color = if (process.memoryUsage > 0) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                    if (process.isRunning) {
+                        Text(
+                            text = "CPU: ${String.format("%.1f%%", process.cpuUsage * 100)}",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
                     }
-                )
+                }
             }
 
             // 所有进程都显示结束按钮，运行中彩色，非运行灰色
