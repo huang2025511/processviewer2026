@@ -54,11 +54,15 @@ class ProcessViewModel : ViewModel() {
 
     fun loadMemoryInfo(context: Context) {
         viewModelScope.launch {
-            val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-            val memoryInfo = ActivityManager.MemoryInfo()
-            activityManager.getMemoryInfo(memoryInfo)
-            _totalMemory.value = memoryInfo.totalMem
-            _availableMemory.value = memoryInfo.availMem
+            try {
+                val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+                val memoryInfo = ActivityManager.MemoryInfo()
+                activityManager.getMemoryInfo(memoryInfo)
+                _totalMemory.value = memoryInfo.totalMem
+                _availableMemory.value = memoryInfo.availMem
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
 
@@ -72,10 +76,44 @@ class ProcessViewModel : ViewModel() {
 
     fun killProcess(context: Context, processInfo: ProcessInfo) {
         viewModelScope.launch(Dispatchers.IO) {
-            val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-            activityManager.killBackgroundProcesses(processInfo.packageName)
-            android.os.Process.killProcess(processInfo.pid)
-            loadProcesses(context)
+            try {
+                val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+                
+                // 方法1：尝试杀死后台进程
+                try {
+                    activityManager.killBackgroundProcesses(processInfo.packageName)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+                
+                // 方法2：尝试强制停止应用（需要系统权限，但我们尝试）
+                try {
+                    val forceStopMethod = activityManager.javaClass.getMethod(
+                        "forceStopPackage", String::class.java
+                    )
+                    forceStopMethod.invoke(activityManager, processInfo.packageName)
+                } catch (e: Exception) {
+                    // 没有系统权限也没关系，继续其他方法
+                }
+                
+                // 方法3：打开应用详情页面让用户手动关闭
+                withContext(Dispatchers.Main) {
+                    try {
+                        val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                        intent.data = Uri.parse("package:${processInfo.packageName}")
+                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        context.startActivity(intent)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+                
+                // 延迟刷新，给系统一些时间
+                kotlinx.coroutines.delay(500)
+                loadProcesses(context)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
 
@@ -83,137 +121,181 @@ class ProcessViewModel : ViewModel() {
         var filtered = _processes.value
 
         if (_selectedCategory.value != ProcessCategory.ALL) {
-            filtered = filtered.filter { it.getCategory() == _selectedCategory.value }
+            filtered = filtered.filter { 
+                try {
+                    it.getCategory() == _selectedCategory.value
+                } catch (e: Exception) {
+                    false
+                }
+            }
         }
 
         if (_searchQuery.value.isNotEmpty()) {
             val query = _searchQuery.value.lowercase()
             filtered = filtered.filter {
-                it.appName.lowercase().contains(query) ||
-                it.processName.lowercase().contains(query) ||
-                it.packageName.lowercase().contains(query)
+                try {
+                    it.appName.lowercase().contains(query) ||
+                    it.processName.lowercase().contains(query) ||
+                    it.packageName.lowercase().contains(query)
+                } catch (e: Exception) {
+                    false
+                }
             }
         }
 
-        return filtered.sortedWith(compareByDescending<ProcessInfo> { it.memoryUsage }
-            .thenBy { it.appName })
+        return try {
+            filtered.sortedWith(compareByDescending<ProcessInfo> { it.memoryUsage }
+                .thenBy { it.appName })
+        } catch (e: Exception) {
+            filtered
+        }
     }
 
     private fun getRunningProcesses(context: Context): List<ProcessInfo> {
         val packageManager = context.packageManager
         val processes = mutableListOf<ProcessInfo>()
         val processSet = mutableSetOf<String>()
+        val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
-            val endTime = System.currentTimeMillis()
-            val beginTime = endTime - 1000 * 60 * 60
+        // 方法1：使用 runningAppProcesses
+        val runningAppProcesses = try {
+            activityManager.runningAppProcesses ?: emptyList()
+        } catch (e: Exception) {
+            emptyList()
+        }
 
+        for (processInfo in runningAppProcesses) {
             try {
-                val usageStatsList = usageStatsManager.queryUsageStats(
-                    UsageStatsManager.INTERVAL_DAILY,
-                    beginTime,
-                    endTime
-                )
+                val packageName = processInfo.processName
+                if (processSet.contains(packageName)) continue
 
-                for (usageStats in usageStatsList) {
-                    try {
-                        val packageName = usageStats.packageName
-                        if (processSet.contains(packageName)) continue
-
-                        val applicationInfo = packageManager.getApplicationInfo(packageName, 0)
-                        val appName = packageManager.getApplicationLabel(applicationInfo).toString()
-                        val icon = try {
-                            packageManager.getApplicationIcon(applicationInfo)
+                val applicationInfo = try {
+                    packageManager.getApplicationInfo(packageName, 0)
+                } catch (e: PackageManager.NameNotFoundException) {
+                    val packages = try {
+                        packageManager.getPackagesForUid(processInfo.uid)
+                    } catch (e: Exception) {
+                        null
+                    }
+                    if (!packages.isNullOrEmpty()) {
+                        try {
+                            packageManager.getApplicationInfo(packages[0], 0)
                         } catch (e: Exception) {
                             null
                         }
-                        val isSystemApp = (applicationInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
-
-                        processes.add(
-                            ProcessInfo(
-                                pid = usageStats.lastTimeUsed.toInt(),
-                                uid = applicationInfo.uid,
-                                processName = packageName,
-                                appName = appName,
-                                packageName = packageName,
-                                icon = icon,
-                                memoryUsage = usageStats.totalTimeInForeground.toLong(),
-                                isSystemApp = isSystemApp,
-                                isRunning = true
-                            )
-                        )
-                        processSet.add(packageName)
-                    } catch (e: PackageManager.NameNotFoundException) {
-                        continue
+                    } else {
+                        null
                     }
                 }
-            } catch (e: SecurityException) {
+
+                val appName = applicationInfo?.let {
+                    try {
+                        packageManager.getApplicationLabel(it).toString()
+                    } catch (e: Exception) {
+                        packageName
+                    }
+                } ?: packageName
+
+                val icon = applicationInfo?.let {
+                    try {
+                        packageManager.getApplicationIcon(it)
+                    } catch (e: Exception) {
+                        null
+                    }
+                }
+
+                val isSystemApp = applicationInfo?.let {
+                    (it.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+                } ?: true
+
+                val memoryUsage = try {
+                    val memoryInfo = activityManager.getProcessMemoryInfo(intArrayOf(processInfo.pid))
+                    if (memoryInfo.isNotEmpty()) {
+                        memoryInfo[0].totalPss * 1024L
+                    } else {
+                        0L
+                    }
+                } catch (e: Exception) {
+                    0L
+                }
+
+                processes.add(
+                    ProcessInfo(
+                        pid = processInfo.pid,
+                        uid = processInfo.uid,
+                        processName = packageName,
+                        appName = appName,
+                        packageName = applicationInfo?.packageName ?: packageName,
+                        icon = icon,
+                        memoryUsage = memoryUsage,
+                        isSystemApp = isSystemApp,
+                        isRunning = true
+                    )
+                )
+                processSet.add(packageName)
+            } catch (e: Exception) {
                 e.printStackTrace()
             }
         }
 
-        val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-        val runningAppProcesses = activityManager.runningAppProcesses
-
-        if (runningAppProcesses != null) {
-            for (processInfo in runningAppProcesses) {
+        // 方法2：从已安装应用中获取更多进程信息（改进方法）
+        try {
+            val installedPackages = packageManager.getInstalledApplications(0)
+            for (appInfo in installedPackages) {
                 try {
-                    val packageName = processInfo.processName
+                    val packageName = appInfo.packageName
                     if (processSet.contains(packageName)) continue
 
-                    val applicationInfo = try {
-                        packageManager.getApplicationInfo(packageName, 0)
-                    } catch (e: PackageManager.NameNotFoundException) {
-                        val packages = packageManager.getPackagesForUid(processInfo.uid)
-                        if (!packages.isNullOrEmpty()) {
-                            packageManager.getApplicationInfo(packages[0], 0)
+                    val appName = try {
+                        packageManager.getApplicationLabel(appInfo).toString()
+                    } catch (e: Exception) {
+                        packageName
+                    }
+
+                    val icon = try {
+                        packageManager.getApplicationIcon(appInfo)
+                    } catch (e: Exception) {
+                        null
+                    }
+
+                    val isSystemApp = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+
+                    // 尝试获取内存信息
+                    val memoryUsage = try {
+                        val processesForPkg = runningAppProcesses.filter { 
+                            it.processName == packageName || it.pkgList?.contains(packageName) == true
+                        }
+                        if (processesForPkg.isNotEmpty()) {
+                            val pids = processesForPkg.map { it.pid }.toIntArray()
+                            val memoryInfo = activityManager.getProcessMemoryInfo(pids)
+                            memoryInfo.sumOf { it.totalPss } * 1024L
                         } else {
-                            null
+                            0L
                         }
-                    }
-
-                    val appName = applicationInfo?.let {
-                        packageManager.getApplicationLabel(it).toString()
-                    } ?: packageName
-
-                    val icon = applicationInfo?.let {
-                        try {
-                            packageManager.getApplicationIcon(it)
-                        } catch (e: Exception) {
-                            null
-                        }
-                    }
-
-                    val isSystemApp = applicationInfo?.let {
-                        (it.flags and ApplicationInfo.FLAG_SYSTEM) != 0
-                    } ?: true
-
-                    val memoryInfo = activityManager.getProcessMemoryInfo(intArrayOf(processInfo.pid))
-                    val memoryUsage = if (memoryInfo.isNotEmpty()) {
-                        memoryInfo[0].totalPss * 1024L
-                    } else {
+                    } catch (e: Exception) {
                         0L
                     }
 
                     processes.add(
                         ProcessInfo(
-                            pid = processInfo.pid,
-                            uid = processInfo.uid,
+                            pid = appInfo.uid + 10000,
+                            uid = appInfo.uid,
                             processName = packageName,
                             appName = appName,
-                            packageName = applicationInfo?.packageName ?: packageName,
+                            packageName = packageName,
                             icon = icon,
                             memoryUsage = memoryUsage,
                             isSystemApp = isSystemApp,
-                            isRunning = true
+                            isRunning = memoryUsage > 0 // 有内存占用视为正在运行
                         )
                     )
                     processSet.add(packageName)
                 } catch (e: Exception) {
-                    e.printStackTrace()
+                    continue
                 }
             }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
 
         return processes

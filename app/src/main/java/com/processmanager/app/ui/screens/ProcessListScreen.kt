@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.VectorDrawable
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -41,9 +42,15 @@ fun ProcessListScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val hasPermission = remember { mutableStateOf(viewModel.hasUsageStatsPermission(context)) }
     
-    // 直接计算过滤后的进程列表，确保每次状态变化都能正确更新
+    // 先获取所有过滤后的进程，然后按运行状态和内存占用排序
     val filteredProcesses = remember(processes, selectedCategory, searchQuery) {
-        viewModel.getFilteredProcesses()
+        val allFiltered = viewModel.getFilteredProcesses()
+        // 先显示正在运行的进程，再按内存占用排序
+        allFiltered.sortedWith(
+            compareByDescending<ProcessInfo> { it.isRunning }
+                .thenByDescending { it.memoryUsage }
+                .thenBy { it.appName }
+        )
     }
 
     // 确保权限变化时更新
@@ -238,7 +245,14 @@ fun ProcessItem(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        colors = if (process.isRunning) {
+            CardDefaults.cardColors()
+        } else {
+            CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+            )
+        }
     ) {
         Row(
             modifier = Modifier
@@ -282,13 +296,26 @@ fun ProcessItem(
             Column(
                 modifier = Modifier.weight(1f)
             ) {
-                Text(
-                    text = process.appName,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = process.appName,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (process.isRunning) {
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primary)
+                        )
+                    }
+                }
                 Text(
                     text = process.processName,
                     fontSize = 12.sp,
@@ -299,16 +326,22 @@ fun ProcessItem(
                 Text(
                     text = "内存: ${viewModel.formatMemory(process.memoryUsage)}",
                     fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.primary
+                    color = if (process.memoryUsage > 0) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
                 )
             }
 
-            IconButton(onClick = { viewModel.killProcess(context, process) }) {
-                Icon(
-                    Icons.Default.Close,
-                    contentDescription = "结束进程",
-                    tint = MaterialTheme.colorScheme.error
-                )
+            if (process.isRunning) {
+                IconButton(onClick = { viewModel.killProcess(context, process) }) {
+                    Icon(
+                        Icons.Default.Close,
+                        contentDescription = "结束进程",
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                }
             }
         }
     }
