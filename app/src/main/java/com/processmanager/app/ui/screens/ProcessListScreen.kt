@@ -100,7 +100,7 @@ fun ProcessListScreen(
                     // 排序按钮
                     Box {
                         IconButton(onClick = { showSortMenu = true }) {
-                            Icon(Icons.Default.Sort, contentDescription = "排序")
+                            Icon(Icons.Default.List, contentDescription = "排序")
                         }
                         DropdownMenu(
                             expanded = showSortMenu,
