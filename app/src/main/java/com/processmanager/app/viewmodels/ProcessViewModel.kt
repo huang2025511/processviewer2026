@@ -24,26 +24,26 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class ProcessViewModel : ViewModel() {
-    private val _processes = MutableStateFlow&lt;List&lt;ProcessInfo&gt;&gt;(emptyList())
-    val processes: StateFlow&lt;List&lt;ProcessInfo&gt;&gt; = _processes.asStateFlow()
+    private val _processes = MutableStateFlow<List<ProcessInfo>>(emptyList())
+    val processes: StateFlow<List<ProcessInfo>> = _processes.asStateFlow()
 
     private val _selectedCategory = MutableStateFlow(ProcessCategory.ALL)
-    val selectedCategory: StateFlow&lt;ProcessCategory&gt; = _selectedCategory.asStateFlow()
+    val selectedCategory: StateFlow<ProcessCategory> = _selectedCategory.asStateFlow()
 
     private val _searchQuery = MutableStateFlow("")
-    val searchQuery: StateFlow&lt;String&gt; = _searchQuery.asStateFlow()
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
     private val _totalMemory = MutableStateFlow(0L)
-    val totalMemory: StateFlow&lt;Long&gt; = _totalMemory.asStateFlow()
+    val totalMemory: StateFlow<Long> = _totalMemory.asStateFlow()
 
     private val _availableMemory = MutableStateFlow(0L)
-    val availableMemory: StateFlow&lt;Long&gt; = _availableMemory.asStateFlow()
+    val availableMemory: StateFlow<Long> = _availableMemory.asStateFlow()
 
     private val _isLoading = MutableStateFlow(false)
-    val isLoading: StateFlow&lt;Boolean&gt; = _isLoading.asStateFlow()
+    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
     private val _sortBy = MutableStateFlow(SortBy.MEMORY)
-    val sortBy: StateFlow&lt;SortBy&gt; = _sortBy.asStateFlow()
+    val sortBy: StateFlow<SortBy> = _sortBy.asStateFlow()
     
     private var isMonitoring = false
     private val cpuMonitor = CpuMonitor()
@@ -77,13 +77,13 @@ class ProcessViewModel : ViewModel() {
         withContext(Dispatchers.IO) {
             try {
                 val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-                val updatedProcesses = _processes.value.map { process -&gt;
+                val updatedProcesses = _processes.value.map { process ->
                     var newMemoryUsage = process.memoryUsage
                     var newCpuUsage = process.cpuUsage
                     
                     try {
                         val memoryInfo = activityManager.getProcessMemoryInfo(intArrayOf(process.pid))
-                        if (memoryInfo.isNotEmpty() &amp;&amp; memoryInfo[0].totalPss &gt; 0) {
+                        if (memoryInfo.isNotEmpty() && memoryInfo[0].totalPss > 0) {
                             newMemoryUsage = memoryInfo[0].totalPss * 1024L
                         }
                     } catch (e: Exception) {
@@ -169,7 +169,7 @@ class ProcessViewModel : ViewModel() {
         }
     }
 
-    fun getFilteredProcesses(): List&lt;ProcessInfo&gt; {
+    fun getFilteredProcesses(): List<ProcessInfo> {
         var filtered = _processes.value
 
         if (_selectedCategory.value != ProcessCategory.ALL) {
@@ -197,34 +197,34 @@ class ProcessViewModel : ViewModel() {
 
         return try {
             when (_sortBy.value) {
-                SortBy.MEMORY -&gt; {
+                SortBy.MEMORY -> {
                     filtered.sortedWith(
-                        compareByDescending&lt;ProcessInfo&gt; { it.isRunning }
+                        compareByDescending<ProcessInfo> { it.isRunning }
                             .thenByDescending { it.memoryUsage }
-                            .thenBy { it.packageName }
+                            .thenBy { it.packageName } // 使用包名保证排序稳定
                     )
                 }
-                SortBy.CPU -&gt; {
+                SortBy.CPU -> {
                     filtered.sortedWith(
-                        compareByDescending&lt;ProcessInfo&gt; { it.isRunning }
+                        compareByDescending<ProcessInfo> { it.isRunning }
                             .thenByDescending { it.cpuUsage }
                             .thenByDescending { it.memoryUsage }
-                            .thenBy { it.packageName }
+                            .thenBy { it.packageName } // 使用包名保证排序稳定
                     )
                 }
-                SortBy.NAME -&gt; {
+                SortBy.NAME -> {
                     filtered.sortedWith(
-                        compareByDescending&lt;ProcessInfo&gt; { it.isRunning }
+                        compareByDescending<ProcessInfo> { it.isRunning }
                             .thenBy { it.appName }
                             .thenByDescending { it.memoryUsage }
-                            .thenBy { it.packageName }
+                            .thenBy { it.packageName } // 使用包名保证排序稳定
                     )
                 }
-                SortBy.RUNNING -&gt; {
+                SortBy.RUNNING -> {
                     filtered.sortedWith(
-                        compareByDescending&lt;ProcessInfo&gt; { it.isRunning }
+                        compareByDescending<ProcessInfo> { it.isRunning }
                             .thenByDescending { it.memoryUsage }
-                            .thenBy { it.packageName }
+                            .thenBy { it.packageName } // 使用包名保证排序稳定
                     )
                 }
             }
@@ -233,11 +233,10 @@ class ProcessViewModel : ViewModel() {
         }
     }
 
-    private fun getRunningProcesses(context: Context): List&lt;ProcessInfo&gt; {
+    private fun getRunningProcesses(context: Context): List<ProcessInfo> {
         val packageManager = context.packageManager
+        val realProcesses = mutableListOf<ProcessInfo>()
         val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-
-        val realProcesses = mutableListOf&lt;ProcessInfo&gt;()
 
         // 从 runningAppProcesses 中获取真实进程
         try {
@@ -251,7 +250,7 @@ class ProcessViewModel : ViewModel() {
                     }
 
                     val packages = process.pkgList
-                    val packageName = if (packages != null &amp;&amp; packages.isNotEmpty()) {
+                    val packageName = if (packages != null && packages.isNotEmpty()) {
                         packages[0]
                     } else {
                         process.processName
@@ -373,7 +372,7 @@ class ProcessViewModel : ViewModel() {
 
         // 按包名去重，保留内存最大的一个
         val uniqueProcesses = realProcesses.groupBy { it.packageName }
-            .mapValues { (_, list) -&gt; list.maxByOrNull { it.memoryUsage }!! }
+            .mapValues { (_, list) -> list.maxByOrNull { it.memoryUsage }!! }
             .values
             .toList()
 
@@ -382,15 +381,15 @@ class ProcessViewModel : ViewModel() {
 
     fun formatMemory(bytes: Long): String {
         return when {
-            bytes &gt;= 1024 * 1024 * 1024 -&gt; String.format("%.2f GB", bytes / (1024.0 * 1024.0 * 1024.0))
-            bytes &gt;= 1024 * 1024 -&gt; String.format("%.2f MB", bytes / (1024.0 * 1024.0))
-            bytes &gt;= 1024 -&gt; String.format("%.2f KB", bytes / 1024.0)
-            else -&gt; "$bytes B"
+            bytes >= 1024 * 1024 * 1024 -> String.format("%.2f GB", bytes / (1024.0 * 1024.0 * 1024.0))
+            bytes >= 1024 * 1024 -> String.format("%.2f MB", bytes / (1024.0 * 1024.0))
+            bytes >= 1024 -> String.format("%.2f KB", bytes / 1024.0)
+            else -> "$bytes B"
         }
     }
 
     fun hasUsageStatsPermission(context: Context): Boolean {
-        if (Build.VERSION.SDK_INT &gt;= Build.VERSION_CODES.LOLLIPOP) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
             val endTime = System.currentTimeMillis()
             val beginTime = endTime - 1000 * 60 * 60
