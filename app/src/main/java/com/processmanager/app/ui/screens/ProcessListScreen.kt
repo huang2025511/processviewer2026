@@ -319,39 +319,13 @@ fun ProcessItem(
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // 改进图标加载，支持所有Drawable类型
-            val appIcon = remember(process.packageName) {
+            // 简单的图标加载逻辑
+            val iconBitmap = remember(process.packageName) {
                 try {
-                    // 重新从PackageManager获取图标，确保兼容性
-                    val packageManager = context.packageManager
-                    val appInfo = packageManager.getApplicationInfo(process.packageName, 0)
-                    packageManager.getApplicationIcon(appInfo)
-                } catch (e: Exception) {
-                    null
-                }
-            }
-            
-            val iconBitmap = remember(appIcon) {
-                try {
-                    appIcon?.let {
+                    process.icon?.let {
                         when (it) {
                             is BitmapDrawable -> it.bitmap.asImageBitmap()
-                            else -> {
-                                // 尝试其他drawable类型
-                                try {
-                                    val bitmap = Bitmap.createBitmap(
-                                        it.intrinsicWidth.coerceAtLeast(1),
-                                        it.intrinsicHeight.coerceAtLeast(1),
-                                        Bitmap.Config.ARGB_8888
-                                    )
-                                    val canvas = android.graphics.Canvas(bitmap)
-                                    it.setBounds(0, 0, canvas.width, canvas.height)
-                                    it.draw(canvas)
-                                    bitmap.asImageBitmap()
-                                } catch (e: Exception) {
-                                    null
-                                }
-                            }
+                            else -> null
                         }
                     }
                 } catch (e: Exception) {
@@ -370,7 +344,7 @@ fun ProcessItem(
                 )
             } else {
                 Icon(
-                    imageVector = Icons.Default.Android,
+                    imageVector = Icons.Default.Home,
                     contentDescription = process.appName,
                     modifier = Modifier.size(48.dp)
                 )
