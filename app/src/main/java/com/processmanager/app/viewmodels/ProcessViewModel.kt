@@ -1,25 +1,25 @@
 package com.processmanager.app.viewmodels
 
 import android.app.ActivityManager
-import android.app.usage.UsageStats
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Build
-import android.os.Debug
 import android.provider.Settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.processmanager.app.models.ProcessCategory
 import com.processmanager.app.models.ProcessInfo
 import com.processmanager.app.models.SortBy
+import com.processmanager.app.utils.CpuMonitor
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -44,6 +44,9 @@ class ProcessViewModel : ViewModel() {
 
     private val _sortBy = MutableStateFlow(SortBy.MEMORY)
     val sortBy: StateFlow<SortBy> = _sortBy.asStateFlow()
+    
+    private var isMonitoring = false
+    private val cpuMonitor = CpuMonitor()
 
     fun loadProcesses(context: Context) {
         viewModelScope.launch {
@@ -53,6 +56,63 @@ class ProcessViewModel : ViewModel() {
             }
             _processes.value = processList
             _isLoading.value = false
+            
+            startRealtimeMonitoring(context)
+        }
+    }
+    
+    private fun startRealtimeMonitoring(context: Context) {
+        if (isMonitoring) return
+        isMonitoring = true
+        
+        viewModelScope.launch {
+            while (isActive) {
+                delay(2000)
+                updateRealtimeData(context)
+            }
+        }
+    }
+    
+    private suspend fun updateRealtimeData(context: Context) {
+        withContext(Dispatchers.IO) {
+            try {
+                val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+                val updatedProcesses = _processes.value.map { process ->
+                    var newMemoryUsage = process.memoryUsage
+                    var newCpuUsage = process.cpuUsage
+                    
+                    try {
+                        val memoryInfo = activityManager.getProcessMemoryInfo(intArrayOf(process.pid))
+                        if (memoryInfo.isNotEmpty() && memoryInfo[0].totalPss > 0) {
+                            newMemoryUsage = memoryInfo[0].totalPss * 1024L
+                        }
+                    } catch (e: Exception) {
+                        // 忽略
+                    }
+                    
+                    try {
+                        val cpuUsage = cpuMonitor.getCpuUsage(process.pid)
+                        newCpuUsage = cpuUsage.processCpuUsage
+                    } catch (e: Exception) {
+                        // 忽略
+                    }
+                    
+                    process.copy(
+                        memoryUsage = newMemoryUsage,
+                        cpuUsage = newCpuUsage
+                    )
+                }
+                
+                _processes.value = updatedProcesses
+                
+                val memoryInfo = ActivityManager.MemoryInfo()
+                activityManager.getMemoryInfo(memoryInfo)
+                _totalMemory.value = memoryInfo.totalMem
+                _availableMemory.value = memoryInfo.availMem
+                
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
 
@@ -87,35 +147,20 @@ class ProcessViewModel : ViewModel() {
             try {
                 val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
                 
-                // 1. 尝试杀死后台进程
                 try {
                     activityManager.killBackgroundProcesses(processInfo.packageName)
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
                 
-                // 2. 尝试用PID杀
                 try {
-                    android.os.Process.killProcess(processInfo.pid)
+                    if (processInfo.packageName == context.packageName) {
+                        android.os.Process.killProcess(processInfo.pid)
+                    }
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
                 
-                // 3. 如果是用户应用，打开详情页面
-                if (!processInfo.isSystemApp) {
-                    withContext(Dispatchers.Main) {
-                        try {
-                            val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
-                            intent.data = android.net.Uri.parse("package:" + processInfo.packageName)
-                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            context.startActivity(intent)
-                        } catch (e: Exception) {
-                            e.printStackTrace()
-                        }
-                    }
-                }
-                
-                // 延迟刷新
                 kotlinx.coroutines.delay(1000)
                 loadProcesses(context)
             } catch (e: Exception) {
@@ -336,5 +381,10 @@ class ProcessViewModel : ViewModel() {
         val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         context.startActivity(intent)
+    }
+    
+    override fun onCleared() {
+        super.onCleared()
+        isMonitoring = false
     }
 }
