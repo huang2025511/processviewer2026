@@ -24,26 +24,26 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class ProcessViewModel : ViewModel() {
-    private val _processes = MutableStateFlow<List<ProcessInfo>>(emptyList())
-    val processes: StateFlow<List<ProcessInfo>> = _processes.asStateFlow()
+    private val _processes = MutableStateFlow&lt;List&lt;ProcessInfo&gt;&gt;(emptyList())
+    val processes: StateFlow&lt;List&lt;ProcessInfo&gt;&gt; = _processes.asStateFlow()
 
     private val _selectedCategory = MutableStateFlow(ProcessCategory.ALL)
-    val selectedCategory: StateFlow<ProcessCategory> = _selectedCategory.asStateFlow()
+    val selectedCategory: StateFlow&lt;ProcessCategory&gt; = _selectedCategory.asStateFlow()
 
     private val _searchQuery = MutableStateFlow("")
-    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+    val searchQuery: StateFlow&lt;String&gt; = _searchQuery.asStateFlow()
 
     private val _totalMemory = MutableStateFlow(0L)
-    val totalMemory: StateFlow<Long> = _totalMemory.asStateFlow()
+    val totalMemory: StateFlow&lt;Long&gt; = _totalMemory.asStateFlow()
 
     private val _availableMemory = MutableStateFlow(0L)
-    val availableMemory: StateFlow<Long> = _availableMemory.asStateFlow()
+    val availableMemory: StateFlow&lt;Long&gt; = _availableMemory.asStateFlow()
 
     private val _isLoading = MutableStateFlow(false)
-    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+    val isLoading: StateFlow&lt;Boolean&gt; = _isLoading.asStateFlow()
 
     private val _sortBy = MutableStateFlow(SortBy.MEMORY)
-    val sortBy: StateFlow<SortBy> = _sortBy.asStateFlow()
+    val sortBy: StateFlow&lt;SortBy&gt; = _sortBy.asStateFlow()
     
     private var isMonitoring = false
     private val cpuMonitor = CpuMonitor()
@@ -77,13 +77,13 @@ class ProcessViewModel : ViewModel() {
         withContext(Dispatchers.IO) {
             try {
                 val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-                val updatedProcesses = _processes.value.map { process ->
+                val updatedProcesses = _processes.value.map { process -&gt;
                     var newMemoryUsage = process.memoryUsage
                     var newCpuUsage = process.cpuUsage
                     
                     try {
                         val memoryInfo = activityManager.getProcessMemoryInfo(intArrayOf(process.pid))
-                        if (memoryInfo.isNotEmpty() && memoryInfo[0].totalPss > 0) {
+                        if (memoryInfo.isNotEmpty() &amp;&amp; memoryInfo[0].totalPss &gt; 0) {
                             newMemoryUsage = memoryInfo[0].totalPss * 1024L
                         }
                     } catch (e: Exception) {
@@ -169,7 +169,7 @@ class ProcessViewModel : ViewModel() {
         }
     }
 
-    fun getFilteredProcesses(): List<ProcessInfo> {
+    fun getFilteredProcesses(): List&lt;ProcessInfo&gt; {
         var filtered = _processes.value
 
         if (_selectedCategory.value != ProcessCategory.ALL) {
@@ -197,34 +197,34 @@ class ProcessViewModel : ViewModel() {
 
         return try {
             when (_sortBy.value) {
-                SortBy.MEMORY -> {
+                SortBy.MEMORY -&gt; {
                     filtered.sortedWith(
-                        compareByDescending<ProcessInfo> { it.isRunning }
+                        compareByDescending&lt;ProcessInfo&gt; { it.isRunning }
                             .thenByDescending { it.memoryUsage }
-                            .thenBy { it.packageName } // 使用包名保证排序稳定
+                            .thenBy { it.packageName }
                     )
                 }
-                SortBy.CPU -> {
+                SortBy.CPU -&gt; {
                     filtered.sortedWith(
-                        compareByDescending<ProcessInfo> { it.isRunning }
+                        compareByDescending&lt;ProcessInfo&gt; { it.isRunning }
                             .thenByDescending { it.cpuUsage }
                             .thenByDescending { it.memoryUsage }
-                            .thenBy { it.packageName } // 使用包名保证排序稳定
+                            .thenBy { it.packageName }
                     )
                 }
-                SortBy.NAME -> {
+                SortBy.NAME -&gt; {
                     filtered.sortedWith(
-                        compareByDescending<ProcessInfo> { it.isRunning }
+                        compareByDescending&lt;ProcessInfo&gt; { it.isRunning }
                             .thenBy { it.appName }
                             .thenByDescending { it.memoryUsage }
-                            .thenBy { it.packageName } // 使用包名保证排序稳定
+                            .thenBy { it.packageName }
                     )
                 }
-                SortBy.RUNNING -> {
+                SortBy.RUNNING -&gt; {
                     filtered.sortedWith(
-                        compareByDescending<ProcessInfo> { it.isRunning }
+                        compareByDescending&lt;ProcessInfo&gt; { it.isRunning }
                             .thenByDescending { it.memoryUsage }
-                            .thenBy { it.packageName } // 使用包名保证排序稳定
+                            .thenBy { it.packageName }
                     )
                 }
             }
@@ -233,16 +233,13 @@ class ProcessViewModel : ViewModel() {
         }
     }
 
-    private fun getRunningProcesses(context: Context): List<ProcessInfo> {
+    private fun getRunningProcesses(context: Context): List&lt;ProcessInfo&gt; {
         val packageManager = context.packageManager
-        val processes = mutableListOf<ProcessInfo>()
         val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
 
-        // 1. 首先尝试用传统方法
-        val detectedPackages = mutableSetOf<String>()
-        val processMemoryMap = mutableMapOf<String, Long>()
-        
-        // 从 runningAppProcesses 中获取
+        val realProcesses = mutableListOf&lt;ProcessInfo&gt;()
+
+        // 从 runningAppProcesses 中获取真实进程
         try {
             val runningAppProcesses = activityManager.runningAppProcesses ?: emptyList()
             for (process in runningAppProcesses) {
@@ -252,141 +249,148 @@ class ProcessViewModel : ViewModel() {
                     if (memoryInfo.isNotEmpty()) {
                         memory = memoryInfo[0].totalPss * 1024L
                     }
-                    
+
                     val packages = process.pkgList
-                    if (packages != null && packages.isNotEmpty()) {
-                        detectedPackages.add(packages[0])
-                        processMemoryMap[packages[0]] = memory
+                    val packageName = if (packages != null &amp;&amp; packages.isNotEmpty()) {
+                        packages[0]
+                    } else {
+                        process.processName
                     }
-                    detectedPackages.add(process.processName)
-                    processMemoryMap[process.processName] = memory
+
+                    // 获取应用信息
+                    val appInfo = try {
+                        packageManager.getApplicationInfo(packageName, 0)
+                    } catch (e: Exception) {
+                        continue
+                    }
+
+                    val appName = try {
+                        packageManager.getApplicationLabel(appInfo).toString()
+                    } catch (e: Exception) {
+                        packageName
+                    }
+                    val icon = try {
+                        packageManager.getApplicationIcon(appInfo)
+                    } catch (e: Exception) {
+                        null
+                    }
+                    val isSystemApp = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+
+                    // 获取真实CPU使用率
+                    val cpuUsage = try {
+                        cpuMonitor.getCpuUsage(process.pid).processCpuUsage
+                    } catch (e: Exception) {
+                        0f
+                    }
+
+                    realProcesses.add(
+                        ProcessInfo(
+                            pid = process.pid,
+                            uid = appInfo.uid,
+                            processName = process.processName,
+                            appName = appName,
+                            packageName = packageName,
+                            icon = icon,
+                            memoryUsage = memory,
+                            cpuUsage = cpuUsage,
+                            threadCount = 1,
+                            isSystemApp = isSystemApp,
+                            isRunning = true
+                        )
+                    )
                 } catch (e: Exception) {
-                    // 继续
+                    e.printStackTrace()
                 }
             }
         } catch (e: Exception) {
             e.printStackTrace()
         }
 
-        // 从 runningServices 中获取
+        // 从 runningServices 中获取更多真实进程
         try {
             val runningServices = activityManager.getRunningServices(200) ?: emptyList()
             for (service in runningServices) {
                 try {
                     val pkgName = service.service.packageName
-                    if (!detectedPackages.contains(pkgName)) {
-                        detectedPackages.add(pkgName)
-                        val pid = service.pid
-                        try {
-                            val memoryInfo = activityManager.getProcessMemoryInfo(intArrayOf(pid))
-                            if (memoryInfo.isNotEmpty()) {
-                                processMemoryMap[pkgName] = memoryInfo[0].totalPss * 1024L
-                            }
-                        } catch (e: Exception) {}
+                    val pid = service.pid
+
+                    // 检查是否已经添加过
+                    val alreadyAdded = realProcesses.any { it.packageName == pkgName }
+                    if (alreadyAdded) continue
+
+                    val appInfo = try {
+                        packageManager.getApplicationInfo(pkgName, 0)
+                    } catch (e: Exception) {
+                        continue
                     }
-                } catch (e: Exception) {}
-            }
-        } catch (e: Exception) {}
 
-        // 如果上述方法没找到，尝试使用 UsageStats（需要权限）
-        if (detectedPackages.size < 5) {
-            try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                    val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
-                    val endTime = System.currentTimeMillis()
-                    val beginTime = endTime - (1000 * 60 * 60 * 24) // 24小时内的应用
-                    val stats = usageStatsManager.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, beginTime, endTime)
-                    // 按使用时间排序，取最近20个
-                    stats.sortedByDescending { it.lastTimeUsed }.take(30).forEach {
-                        if (!detectedPackages.contains(it.packageName)) {
-                            detectedPackages.add(it.packageName)
-                        }
+                    val memoryInfo = activityManager.getProcessMemoryInfo(intArrayOf(pid))
+                    var memory = 0L
+                    if (memoryInfo.isNotEmpty()) {
+                        memory = memoryInfo[0].totalPss * 1024L
                     }
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
 
-        // 添加所有已安装应用
-        val installedApplications = try {
-            packageManager.getInstalledApplications(0) ?: emptyList()
-        } catch (e: Exception) {
-            emptyList()
-        }
+                    val appName = try {
+                        packageManager.getApplicationLabel(appInfo).toString()
+                    } catch (e: Exception) {
+                        pkgName
+                    }
+                    val icon = try {
+                        packageManager.getApplicationIcon(appInfo)
+                    } catch (e: Exception) {
+                        null
+                    }
+                    val isSystemApp = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
 
-        for (appInfo in installedApplications) {
-            try {
-                val packageName = appInfo.packageName
-                val appName = try {
-                    packageManager.getApplicationLabel(appInfo).toString()
-                } catch (e: Exception) {
-                    packageName
-                }
-                val icon = try {
-                    packageManager.getApplicationIcon(appInfo)
-                } catch (e: Exception) {
-                    null
-                }
-                val isSystemApp = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
-                
-                // 判断是否运行
-                val isRunning = detectedPackages.contains(packageName)
-                
-                val realPid = appInfo.uid + 1000 // 用稳定的PID
-                
-                val memoryUsage = if (processMemoryMap.containsKey(packageName) && processMemoryMap[packageName]!! > 0) {
-                    processMemoryMap[packageName]!!
-                } else if (isSystemApp) {
-                    0L
-                } else {
-                    // 给非系统应用一些合理的默认值
-                    val seed = packageName.hashCode().and(0xFFFFFF)
-                    ((seed % 18432) + 2048).toLong() * 1024L
-                }
+                    val cpuUsage = try {
+                        cpuMonitor.getCpuUsage(pid).processCpuUsage
+                    } catch (e: Exception) {
+                        0f
+                    }
 
-                // 改进CPU显示 - 给更高的值，避免显示0%
-                val cpuUsage = if (isRunning) {
-                    val seed = packageName.hashCode().and(0xFF)
-                    ((seed % 35) + 5) * 0.01f // 0.05-0.40 -> 5%-40%
-                } else {
-                    0f
-                }
-
-                processes.add(
-                    ProcessInfo(
-                        pid = realPid,
-                        uid = appInfo.uid,
-                        processName = packageName,
-                        appName = appName,
-                        packageName = packageName,
-                        icon = icon,
-                        memoryUsage = memoryUsage,
-                        cpuUsage = cpuUsage,
-                        threadCount = 1,
-                        isSystemApp = isSystemApp,
-                        isRunning = isRunning
+                    realProcesses.add(
+                        ProcessInfo(
+                            pid = pid,
+                            uid = appInfo.uid,
+                            processName = pkgName,
+                            appName = appName,
+                            packageName = pkgName,
+                            icon = icon,
+                            memoryUsage = memory,
+                            cpuUsage = cpuUsage,
+                            threadCount = 1,
+                            isSystemApp = isSystemApp,
+                            isRunning = true
+                        )
                     )
-                )
-            } catch (e: Exception) {
-                continue
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
             }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
 
-        return processes
+        // 按包名去重，保留内存最大的一个
+        val uniqueProcesses = realProcesses.groupBy { it.packageName }
+            .mapValues { (_, list) -&gt; list.maxByOrNull { it.memoryUsage }!! }
+            .values
+            .toList()
+
+        return uniqueProcesses
     }
 
     fun formatMemory(bytes: Long): String {
         return when {
-            bytes >= 1024 * 1024 * 1024 -> String.format("%.2f GB", bytes / (1024.0 * 1024.0 * 1024.0))
-            bytes >= 1024 * 1024 -> String.format("%.2f MB", bytes / (1024.0 * 1024.0))
-            bytes >= 1024 -> String.format("%.2f KB", bytes / 1024.0)
-            else -> "$bytes B"
+            bytes &gt;= 1024 * 1024 * 1024 -&gt; String.format("%.2f GB", bytes / (1024.0 * 1024.0 * 1024.0))
+            bytes &gt;= 1024 * 1024 -&gt; String.format("%.2f MB", bytes / (1024.0 * 1024.0))
+            bytes &gt;= 1024 -&gt; String.format("%.2f KB", bytes / 1024.0)
+            else -&gt; "$bytes B"
         }
     }
 
     fun hasUsageStatsPermission(context: Context): Boolean {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+        if (Build.VERSION.SDK_INT &gt;= Build.VERSION_CODES.LOLLIPOP) {
             val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
             val endTime = System.currentTimeMillis()
             val beginTime = endTime - 1000 * 60 * 60
