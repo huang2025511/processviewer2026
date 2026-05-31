@@ -11,8 +11,8 @@ android {
         applicationId = "com.processmanager.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 3
-        versionName = "2.1 - Bug fixes &amp; Stability"
+        versionCode = 4
+        versionName = "2.2 - Fix theme &amp; crash issues"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
