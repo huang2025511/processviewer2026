@@ -238,35 +238,22 @@ class ProcessViewModel : ViewModel() {
         val processes = mutableListOf<ProcessInfo>()
         val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
 
-        // 方法1: 先获取最近使用的应用（从UsageStats）
-        val recentPackages = mutableSetOf<String>()
+        // 获取真正在运行的应用（更可靠的方法）
+        val runningPackages = mutableSetOf<String>()
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
-                val endTime = System.currentTimeMillis()
-                val beginTime = endTime - (1000 * 60 * 60 * 2) // 2小时内
-                val stats = usageStatsManager.queryUsageStats(
-                    UsageStatsManager.INTERVAL_DAILY, beginTime, endTime
-                )
-                for (stat in stats) {
-                    recentPackages.add(stat.packageName)
+            val runningAppProcesses = activityManager.runningAppProcesses ?: emptyList()
+            for (process in runningAppProcesses) {
+                val packages = process.pkgList
+                if (packages != null && packages.isNotEmpty()) {
+                    runningPackages.add(packages[0])
                 }
+                runningPackages.add(process.processName)
             }
         } catch (e: Exception) {
             e.printStackTrace()
         }
 
-        // 方法2: 获取正在运行的服务
-        val runningServices = try {
-            activityManager.getRunningServices(100) ?: emptyList()
-        } catch (e: Exception) {
-            emptyList()
-        }
-        for (service in runningServices) {
-            service.service?.packageName?.let { recentPackages.add(it) }
-        }
-
-        // 方法3: 尝试获取真实内存信息
+        // 获取真实内存信息
         val packageMemoryMap = mutableMapOf<String, Long>()
         try {
             val runningAppProcesses = activityManager.runningAppProcesses ?: emptyList()
@@ -289,7 +276,7 @@ class ProcessViewModel : ViewModel() {
             e.printStackTrace()
         }
 
-        // 方法4: 添加所有已安装的应用
+        // 添加所有已安装的应用
         val installedApplications = try {
             packageManager.getInstalledApplications(0) ?: emptyList()
         } catch (e: Exception) {
@@ -310,9 +297,9 @@ class ProcessViewModel : ViewModel() {
                     null
                 }
                 val isSystemApp = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
-                val isRunning = recentPackages.contains(packageName) || !isSystemApp
+                val isRunning = runningPackages.contains(packageName)
 
-                // 获取真实内存，没有就计算一个稳定值
+                // 获取真实内存
                 val memoryUsage = if (isRunning) {
                     val realMemory = packageMemoryMap[packageName] ?: 0L
                     if (realMemory > 0) {

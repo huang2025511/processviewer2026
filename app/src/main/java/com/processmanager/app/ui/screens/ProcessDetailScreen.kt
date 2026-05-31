@@ -85,7 +85,7 @@ fun ProcessDetailScreen(
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     InfoItem("内存使用", viewModel.formatMemory(process.memoryUsage))
-                    InfoItem("CPU使用率", "${process.cpuUsage}%")
+                    InfoItem("CPU使用率", String.format("%.1f%%", process.cpuUsage * 100))
                     InfoItem("线程数", process.threadCount.toString())
                 }
             }
